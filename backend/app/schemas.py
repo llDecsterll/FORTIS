@@ -106,10 +106,12 @@ class DepartmentIn(BaseModel):
 
 
 class DeviceVerifyIn(BaseModel):
-    certificatePem: str
-    systemIdentifier: str
+    challenge: str = Field(max_length=4096)
+    signature: str = Field(max_length=2048)
+    certificatePem: str = Field(max_length=8192)
+    systemIdentifier: str = Field(min_length=1, max_length=512)
     mac: str = ""
-    wireguardPublicKey: str
+    wireguardPublicKey: str = Field(min_length=44, max_length=44)
     deviceName: str = ""
     osName: str = ""
     clientVersion: str = "1.0.0"
@@ -117,18 +119,20 @@ class DeviceVerifyIn(BaseModel):
 
 
 class HeartbeatIn(BaseModel):
-    sessionToken: str
+    challenge: str = Field(max_length=4096)
+    signature: str = Field(max_length=2048)
+    sessionToken: str = Field(max_length=256)
 
 
 class EnrollIn(BaseModel):
-    token: str
-    systemIdentifier: str
+    token: str = Field(min_length=1, max_length=256)
+    systemIdentifier: str = Field(min_length=1, max_length=512)
     macEthernet: str = ""
     macWifi: str = ""
     osName: str = ""
     serial: str = ""
     deviceName: str = ""
-    wireguardPublicKey: str
+    wireguardPublicKey: str = Field(min_length=44, max_length=44)
 
 
 class RequestIn(BaseModel):
@@ -174,7 +178,8 @@ class ResourceIn(BaseModel):
     name: str
     kind: str = "SERVICE"
     host: str
-    port: int | None = None
+    port: int = Field(ge=1, le=65535)
+    protocol: Literal["TCP", "UDP"] = "TCP"
     networkId: str | None = None
     contour: Literal["EMPLOYEES", "SITES"]
     description: str = ""

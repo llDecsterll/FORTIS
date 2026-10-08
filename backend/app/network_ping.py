@@ -43,14 +43,19 @@ def ping(payload: PingInput, actor=Depends(require_roles(Role.ADMIN, Role.IT_LEA
             raise HTTPException(429, 'Между проверками требуется пауза 10 секунд')
         _next_run = time.monotonic() + 10
         try:
-            result = subprocess.run(
-                ['/usr/bin/ping', '-n', '-c', '3', '-W', '1', '-w', '5', '--', target],
-                capture_output=True, text=True, timeout=7,
-                env={**os.environ, 'LC_ALL': 'C'}, check=False,
-            )
+            from . import privilege
+            if privilege.enabled():
+                from types import SimpleNamespace
+                result = SimpleNamespace(**privilege.call('ping', ip=target, interface='', count=3))
+            else:
+                result = subprocess.run(
+                    ['/usr/bin/ping', '-n', '-c', '3', '-W', '1', '-w', '5', '--', target],
+                    capture_output=True, text=True, timeout=7,
+                    env={**os.environ, 'LC_ALL': 'C'}, check=False,
+                )
         except subprocess.TimeoutExpired:
             raise HTTPException(504, 'Проверка превысила время ожидания. Повторите позже')
-        except OSError:
+        except (OSError, RuntimeError):
             raise HTTPException(503, 'Серверная команда ping недоступна')
         output = (result.stdout + result.stderr)[:4096]
         packets = re.search(r'(\d+) packets transmitted, (\d+) received,.*?([\d.]+)% packet loss', output)

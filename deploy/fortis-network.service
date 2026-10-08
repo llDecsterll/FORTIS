@@ -1,0 +1,28 @@
+[Unit]
+Description=FORTIS isolated network service
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=root
+Group=fortis
+WorkingDirectory=/opt/fortis/backend
+Environment=DATA_DIR=/var/lib/fortis-network
+Environment=NETWORK_HELPER_SOCKET=
+Environment=PATH=/usr/sbin:/usr/bin:/sbin:/bin
+ExecStart=/opt/fortis/backend/.venv/bin/python -I /opt/fortis/deploy/network-service.py
+UMask=0077
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/fortis-network /etc/wireguard /etc/netplan /run
+CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_RAW CAP_DAC_OVERRIDE CAP_CHOWN CAP_FOWNER
+RestrictSUIDSGID=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK AF_PACKET
+
+[Install]
+WantedBy=multi-user.target

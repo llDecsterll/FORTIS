@@ -132,6 +132,7 @@ def list_resources(contour: str | None = None, db: Session = Depends(get_db), _=
                 "kind": r.kind,
                 "host": r.host,
                 "port": r.port,
+                "protocol": r.protocol,
                 "networkId": r.network_id,
                 "contour": r.contour.value,
                 "description": r.description,
@@ -149,6 +150,7 @@ def create_resource(payload: ResourceIn, request: Request, db: Session = Depends
         kind=payload.kind,
         host=payload.host,
         port=payload.port,
+        protocol=payload.protocol,
         network_id=payload.networkId,
         contour=Contour(payload.contour),
         description=payload.description,
@@ -193,9 +195,9 @@ def update_resource(resource_id: str, payload: ResourceIn, request: Request, db:
     validate_resource(db, payload)
     if payload.contour != r.contour.value:
         raise HTTPException(409, 'Перенос ресурса между контурами запрещён')
-    if (payload.host, payload.port, payload.networkId, payload.kind) != (r.host, r.port, r.network_id, r.kind) and resource_used(db, r.id):
+    if (payload.host, payload.port, payload.protocol, payload.networkId, payload.kind) != (r.host, r.port, r.protocol, r.network_id, r.kind) and resource_used(db, r.id):
         raise HTTPException(409, 'Ресурс используется в доступах или заявках. Можно изменить название и описание; сначала перенесите связанные доступы для изменения адреса')
-    for key, value in dict(name=payload.name, host=payload.host, port=payload.port, network_id=payload.networkId, kind=payload.kind, description=payload.description).items():
+    for key, value in dict(name=payload.name, host=payload.host, port=payload.port, protocol=payload.protocol, network_id=payload.networkId, kind=payload.kind, description=payload.description).items():
         setattr(r, key, value)
     audit(db, actor_id=actor.id, actor_email=actor.email, action='resource_update', target=r.id, ip=request.client.host if request.client else '')
     return {'id': r.id}

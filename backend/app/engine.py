@@ -533,6 +533,13 @@ def heartbeat(db: Session, session_token: str, external_ip: str) -> dict:
             disable_peer(db, peer, "Истекла сессия агента")
         db.commit()
         raise PermissionError("Сессия истекла")
+    device = db.get(Device, session.device_id_fk)
+    if not device or device.status != DeviceStatus.ACTIVE or (device.user and not device.user.is_active) or (device.access_from and now < device.access_from) or (device.access_until and now >= device.access_until):
+        session.active = False
+        if device and device.peer:
+            disable_peer(db, device.peer, "Доступ агента отозван")
+        db.commit()
+        raise PermissionError("Доступ устройства отозван или истёк")
     session.last_heartbeat = now
     session.expires_at = now + timedelta(seconds=settings.session_ttl_seconds)
     session.external_ip = external_ip or session.external_ip
@@ -892,12 +899,16 @@ def _match_target(ip: ipaddress.IPv4Address | ipaddress.IPv6Address, port: int, 
 
 def _conntrack_flows() -> list[dict]:
     path = Path("/proc/net/nf_conntrack")
-    if not path.exists():
-        return []
+    from . import privilege
     flows = []
     try:
-        lines = path.read_text(errors="ignore").splitlines()
-    except OSError:
+        if privilege.enabled():
+            lines = privilege.call('flows').splitlines()
+        elif path.exists():
+            lines = path.read_text(errors="ignore").splitlines()
+        else:
+            return []
+    except (OSError, RuntimeError):
         return []
     for line in lines:
         if "src=" not in line or "UNREPLIED" in line:

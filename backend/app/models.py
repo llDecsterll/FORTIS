@@ -171,6 +171,7 @@ class Resource(Base):
     kind: Mapped[str] = mapped_column(String, default="SERVICE")
     host: Mapped[str] = mapped_column(String)
     port: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    protocol: Mapped[str | None] = mapped_column(String, nullable=True)
     network_id: Mapped[str | None] = mapped_column(ForeignKey("networks.id"), nullable=True)
     contour: Mapped[Contour] = mapped_column(Enum(Contour))
     description: Mapped[str] = mapped_column(String, default="")

@@ -80,6 +80,9 @@ def matching(network, name, mac):
 
 
 def discover():
+    from . import privilege
+    if privilege.enabled():
+        return privilege.call("discover")
     stats = psutil.net_if_stats()
     addresses = psutil.net_if_addrs()
     linux = platform.system() == 'Linux'
@@ -251,6 +254,9 @@ def transaction(data_dir):
 
 
 def public_transaction(data_dir):
+    from . import privilege
+    if privilege.enabled():
+        return privilege.call("network_status")
     state = transaction(data_dir)
     return {key: state.get(key) for key in ('status', 'expiresAt', 'error') if key in state}
 
@@ -298,6 +304,9 @@ def drain(master):
 
 
 def apply(plan, data_dir):
+    from . import privilege
+    if privilege.enabled():
+        return privilege.call("network_apply", plan=plan)
     global _process, _master
     with _mutex:
         state = transaction(data_dir)
@@ -356,6 +365,9 @@ def matches_live(plan, inventory):
 
 
 def confirm(data_dir):
+    from . import privilege
+    if privilege.enabled():
+        return privilege.call("network_confirm")
     with _mutex:
         state = transaction(data_dir)
         if state.get('status') != 'pending' or time.time() >= state['expiresAt'] - 35:
@@ -381,6 +393,9 @@ def confirm(data_dir):
 
 
 def cancel(data_dir):
+    from . import privilege
+    if privilege.enabled():
+        return privilege.call("network_cancel")
     state = transaction(data_dir)
     if state.get('status') not in ('pending', 'applying'):
         return public_transaction(data_dir)
@@ -390,7 +405,7 @@ def cancel(data_dir):
             os.kill(state['pid'], signal.SIGINT)
             if _process is not None:
                 _process.wait(timeout=15)
-    except (psutil.Error, OSError, subprocess.TimeoutExpired):
+    except (KeyError, psutil.Error, OSError, subprocess.TimeoutExpired):
         pass
     restore(data_dir)
     return public_transaction(data_dir)

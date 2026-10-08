@@ -154,10 +154,17 @@ def _has_memo(row: AccessRequest) -> bool:
 
 
 def _issue_row(db: Session, row: AccessRequest, actor_email: str) -> None:
-    if row.resources_json:
-        raise HTTPException(409, "Ресурсные доступы временно отключены; заявка не может быть выдана")
+    from ..resource_acl import validate_grants
+    resources = validate_grants(db, row.resources_json, row.contour)
     if not row.site_id and row.user and not row.user.is_active:
         raise HTTPException(409, "Учётная запись заблокирована. Сначала разблокируйте пользователя")
+    if not settings.standard_wireguard:
+        # Registration grants a new, single-use identity; no peer is published yet.
+        row.enrollment_token = secrets.token_urlsafe(32)
+        row.issued_device_id = None
+        row.status = RequestStatus.ISSUED
+        row.updated_at = datetime.utcnow()
+        return
     devices = row.site.devices if row.site_id and row.site else (row.user.devices if row.user else [])
     existing = next((d for d in devices if d.peer and (row.site_id or not d.site_id)), None)
     if existing:
@@ -176,7 +183,7 @@ def _issue_row(db: Session, row: AccessRequest, actor_email: str) -> None:
     if access_from and access_from > datetime.utcnow():
         raise HTTPException(409, "Срок доступа ещё не начался. Повторите выдачу после даты начала")
     from ..employee_networks import selected_networks
-    chosen = selected_networks(db, row.networks_json) if not row.site_id and row.networks_json else None
+    chosen = (selected_networks(db, row.networks_json) if row.networks_json else []) if not row.site_id and (row.networks_json or row.resources_json) else None
     if not row.site_id or row.access_until is not None:
         row.access_until = future_access_until(row.access_until, stored=True)
     if row.site_id:
@@ -204,6 +211,15 @@ def _issue_row(db: Session, row: AccessRequest, actor_email: str) -> None:
         for net in chosen:
             db.add(AccessPolicy(device_id_fk=device.id, network_id=net.id, allowed=True))
         device.peer.destination_cidrs = ','.join(n.cidr for n in chosen)
+    if resources:
+        from ..models import AccessPolicy
+        from ..provision import render_stored_config
+        for resource in resources:
+            if not db.query(AccessPolicy).filter_by(device_id_fk=device.id, resource_id=resource.id).first():
+                db.add(AccessPolicy(device_id_fk=device.id, resource_id=resource.id, allowed=True))
+    if chosen is not None or resources:
+        from ..provision import render_stored_config
+        db.flush()
         render_stored_config(db, device.peer)
     # Standard WireGuard clients and routers do not run the KONTUR agent.
     # Install only in this authorized issuance path, never while downloading a file.
@@ -345,12 +361,12 @@ def create_request(payload: RequestIn, request: Request, db: Session = Depends(g
     )
     if not payload.siteId:
         from ..employee_networks import selected_networks
-        row.networks_json = [n.id for n in selected_networks(db, payload.networkIds)]
+        row.networks_json = [n.id for n in selected_networks(db, payload.networkIds)] if payload.networkIds or not payload.resourceIds else []
     else:
         row.networks_json = payload.networkIds
-    if payload.resourceIds:
-        raise HTTPException(422, "Ресурсные доступы временно отключены до реализации ACL по протоколу и порту")
-    row.resources_json = []
+    from ..resource_acl import validate_grants
+    validate_grants(db, payload.resourceIds, row.contour)
+    row.resources_json = list(dict.fromkeys(payload.resourceIds))
     db.add(row)
     db.commit()
     db.refresh(row)
@@ -363,8 +379,8 @@ def approve(request_id: str, request: Request, db: Session = Depends(get_db), ac
     row = db.query(AccessRequest).filter(AccessRequest.id == request_id).with_for_update().first()
     if not row:
         raise HTTPException(404, "Заявка не найдена")
-    if row.resources_json:
-        raise HTTPException(409, "Ресурсные доступы временно отключены; создайте заявку только с явно разрешёнными сетями")
+    from ..resource_acl import validate_grants
+    validate_grants(db, row.resources_json, row.contour)
     if row.status != RequestStatus.PENDING_APPROVAL:
         raise HTTPException(409, "Заявка уже обработана")
     if not row.site_id and not _has_memo(row):

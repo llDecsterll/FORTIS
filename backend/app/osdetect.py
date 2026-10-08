@@ -15,12 +15,13 @@ from pathlib import Path
 
 from .config import settings
 from .configured_interfaces import profiles
+from .config import settings
 
 _LOCK = threading.Lock()
 _SEEN: dict[str, dict] = {}
 _STARTED = False
 _LOCK_HANDLE = None
-_FILE = Path("/var/lib/kontur/os-seen.json")
+_FILE = settings.data_dir / "os-seen.json"
 
 
 def classify(inner: dict | None, outer: dict | None) -> tuple[str, str]:
@@ -89,6 +90,9 @@ def client_mac(public_ip: str) -> str:
 
 
 def observe(vpn_ip: str = "", public_ip: str = "") -> dict:
+    from . import privilege
+    if privilege.enabled():
+        return privilege.call("observe", vpn_ip=vpn_ip, public_ip=public_ip)
     seen = _read()
     inner = seen.get(vpn_ip) if vpn_ip else None
     outer = seen.get(f"pub:{public_ip}") if public_ip else None
@@ -104,6 +108,9 @@ def observe(vpn_ip: str = "", public_ip: str = "") -> dict:
 _SNIFFERS = set()
 
 def start() -> None:
+    from . import privilege
+    if privilege.enabled():
+        return
     global _STARTED, _LOCK_HANDLE
     if not _STARTED:
         try:

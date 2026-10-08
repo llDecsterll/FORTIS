@@ -10,19 +10,22 @@ from .config import settings
 from .configured_interfaces import profiles
 
 def _output(args):
+    if args[:2] == ['wg', 'show']:
+        from .wireguard import _run
+        return _run(args).strip()
     return subprocess.check_output(args, text=True, stderr=subprocess.DEVNULL, timeout=2).strip()
 
 def _interfaces():
     try:
         return json.loads(_output(['ip', '-j', 'address', 'show']))
-    except (OSError, ValueError, subprocess.SubprocessError):
+    except (OSError, RuntimeError, ValueError, subprocess.SubprocessError):
         return []
 
 def _route(mark):
     try:
         rows = json.loads(_output(['ip', '-j', 'route', 'get', '1.1.1.1', 'mark', str(mark)]))
         return rows[0] if rows else {}
-    except (OSError, ValueError, subprocess.SubprocessError):
+    except (OSError, RuntimeError, ValueError, subprocess.SubprocessError):
         return {}
 
 def _safe_name(name):
@@ -51,7 +54,7 @@ def _wg(name):
         now = time.time()
         recent = sum(1 for row in rows if len(row.split()) == 2 and 0 <= now - int(row.split()[1]) < 180)
         return {'available':True,'port':port,'peers':len(rows),'recentPeers':recent}
-    except (OSError, ValueError, subprocess.SubprocessError):
+    except (OSError, RuntimeError, ValueError, subprocess.SubprocessError):
         return {'available':False,'port':None,'peers':None,'recentPeers':None}
 
 def _ipv4(interface):

@@ -65,6 +65,9 @@ class ClientIpMiddleware:
                 peer = ipaddress.ip_address(scope['client'][0])
                 trusted = [ipaddress.ip_network(v.strip()) for v in settings.trusted_proxy_ips.split(',') if v.strip()]
                 if any(peer in net for net in trusted):
+                    protocols = [v for k, v in scope.get('headers', []) if k.lower() == b'x-forwarded-proto']
+                    if protocols == [b'https']:
+                        scope = {**scope, 'scheme': 'https'}
                     headers = [(k, v) for k, v in scope.get('headers', []) if k.lower() == b'x-real-ip']
                     if len(headers) == 1:
                         address = ipaddress.ip_address(headers[0][1].decode('ascii').strip())

@@ -130,9 +130,13 @@ def _metrics_job():
 
 def _migrate() -> None:
     if engine.dialect.name == "sqlite":
-        # First-run SQLite schema is created from the current models.
+        with engine.begin() as conn:
+            columns = {row[1] for row in conn.execute(text("PRAGMA table_info(resources)"))}
+            if "protocol" not in columns:
+                conn.execute(text("ALTER TABLE resources ADD COLUMN protocol TEXT"))
         return
     statements = [
+        "ALTER TABLE resources ADD COLUMN IF NOT EXISTS protocol TEXT",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS phone TEXT NOT NULL DEFAULT ''",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS contact_email TEXT NOT NULL DEFAULT ''",
         "ALTER TABLE sites ADD COLUMN IF NOT EXISTS provider_name TEXT NOT NULL DEFAULT ''",
@@ -175,6 +179,9 @@ def _migrate() -> None:
 
 @app.on_event("startup")
 def startup():
+    import os, platform
+    if platform.system() == "Linux" and os.geteuid() == 0:
+        raise RuntimeError("Запускайте backend от пользователя fortis; сетевые операции выполняет отдельная служба")
     settings.data_dir.mkdir(parents=True, exist_ok=True)
     settings.ca_dir.mkdir(parents=True, exist_ok=True)
     settings.uploads_dir.mkdir(parents=True, exist_ok=True)

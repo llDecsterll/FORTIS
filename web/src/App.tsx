@@ -1627,7 +1627,7 @@ function Networks() {
         </div>
         <div className="card">
           <div className="h-row"><h2>Ресурсы</h2>{canEdit&&<button className="btn" onClick={()=>setResourceDialog({resource:{name:'',host:'',port:'',kind:'SERVICE',contour:'EMPLOYEES',networkId:'',description:''},remove:false})}>Добавить ресурс</button>}</div>
-          {res.map((r) => <div className="net-item" key={r.id}><span>{r.name}<small className="cell-detail">{r.contour==='SITES'?'Объекты':'Сотрудники'}</small></span><b className="mono">{r.host}{r.port ? `:${r.port}` : ""}</b>{canEdit&&<div className="toolbar"><button className="btn secondary" aria-label={`Редактировать ресурс ${r.name}`} onClick={()=>setResourceDialog({resource:r,remove:false})}>Редактировать</button><button className="btn danger" aria-label={`Удалить ресурс ${r.name}`} onClick={()=>setResourceDialog({resource:r,remove:true})}>Удалить</button></div>}</div>)}
+          {res.map((r) => <div className="net-item" key={r.id}><span>{r.name}<small className="cell-detail">{r.contour==='SITES'?'Объекты':'Сотрудники'}</small></span><b className="mono">{r.host}{r.port ? `:${r.port}` : ""}<small className="cell-detail">{r.protocol||"Требуется переоформление доступа"}</small></b>{canEdit&&<div className="toolbar"><button className="btn secondary" aria-label={`Редактировать ресурс ${r.name}`} onClick={()=>setResourceDialog({resource:r,remove:false})}>Редактировать</button><button className="btn danger" aria-label={`Удалить ресурс ${r.name}`} onClick={()=>setResourceDialog({resource:r,remove:true})}>Удалить</button></div>}</div>)}
           {!res.length && <p className="muted">Ресурсов пока нет</p>}
         </div>
       </div>

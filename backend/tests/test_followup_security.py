@@ -53,8 +53,8 @@ class FollowupSecurityTests(unittest.TestCase):
         self.claim(); self.finish()
         for mode in (True, False):
             with patch.object(settings, 'standard_wireguard', mode):
-                self.assertEqual(self.client.get('/api/agent/ca').status_code, 410)
-                self.assertEqual(self.client.post('/api/device/register', json={}).status_code, 410)
+                self.assertEqual(self.client.get('/api/agent/ca').status_code, 410 if mode else 403)
+                self.assertEqual(self.client.post('/api/device/register', json={}).status_code, 410 if mode else 403)
 
     def test_resource_permission_does_not_grant_all_ports(self):
         from app.models import Resource, Device, AccessPolicy, Contour, Network
@@ -123,5 +123,7 @@ class FollowupSecurityTests(unittest.TestCase):
         response = self.client.post('/api/requests', json={'userId': uid, 'deviceName': 'Test device', 'contour': 'EMPLOYEES', 'resourceIds': ['legacy-resource']}, headers=self.csrf())
         self.assertEqual(response.status_code, 422, response.text)
         with self.assertRaises(HTTPException) as denied:
-            _issue_row(None, SimpleNamespace(resources_json=['legacy-resource']), 'test')
-        self.assertEqual(denied.exception.status_code, 409)
+            from app.models import Contour
+            with SessionLocal() as db:
+                _issue_row(db, SimpleNamespace(resources_json=['legacy-resource'], contour=Contour.EMPLOYEES), 'test')
+        self.assertEqual(denied.exception.status_code, 422)

@@ -129,11 +129,16 @@ def render_stored_config(db: Session, peer: WireGuardPeer) -> str:
         parts.append(extra)
     if peer.contour == Contour.SITES and peer.destination_cidrs:
         parts = effective_destinations(db, peer)
-    if peer.contour == Contour.EMPLOYEES and (peer.destination_cidrs or auto_site_access(db) or automatic_company_lans(db)):
+    resource_policies = db.query(AccessPolicy).filter(AccessPolicy.device_id_fk == peer.device_id_fk, AccessPolicy.resource_id.is_not(None), AccessPolicy.allowed.is_(True)).first()
+    if peer.contour == Contour.EMPLOYEES and (peer.destination_cidrs or resource_policies or auto_site_access(db) or automatic_company_lans(db)):
         from .employee_networks import effective_employee_destinations
         parts = effective_employee_destinations(db, peer)
-        if not parts:
+        if not parts and not db.query(AccessPolicy).filter(AccessPolicy.device_id_fk == peer.device_id_fk, AccessPolicy.resource_id.is_not(None), AccessPolicy.allowed.is_(True)).first():
             raise ValueError('Для сотрудника не осталось разрешённых сетей')
+    from .resource_acl import permitted_services
+    device = db.get(Device, peer.device_id_fk)
+    if device:
+        parts.extend(host + "/32" for host, _, _ in permitted_services(db, device))
     from .site_links import linked_destinations
     parts.extend(linked_destinations(db, peer))
     extra = ", ".join(dict.fromkeys(parts))

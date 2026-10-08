@@ -37,10 +37,15 @@ def read_listeners():
 
 def firewall_allows(nic, port):
     try:
-        proc = subprocess.run(['nft', '-j', 'list', 'chain', 'inet', 'filter', 'input'], capture_output=True, text=True, timeout=5)
-        if proc.returncode:
-            return False
-        data = json.loads(proc.stdout)
+        from . import privilege
+        if privilege.enabled():
+            output = privilege.command(['nft', '-j', 'list', 'chain', 'inet', 'fortis_filter', 'input'])
+        else:
+            proc = subprocess.run(['nft', '-j', 'list', 'chain', 'inet', 'fortis_filter', 'input'], capture_output=True, text=True, timeout=5)
+            if proc.returncode:
+                return False
+            output = proc.stdout
+        data = json.loads(output)
         for item in data.get('nftables', []):
             expressions = item.get('rule', {}).get('expr', [])
             if not any('accept' in e for e in expressions):
@@ -60,5 +65,5 @@ def firewall_allows(nic, port):
             if interface_ok and port_ok:
                 return True
         return False
-    except (OSError, ValueError, TypeError, subprocess.SubprocessError):
+    except (OSError, RuntimeError, ValueError, TypeError, subprocess.SubprocessError):
         return False

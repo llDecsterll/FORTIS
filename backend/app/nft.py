@@ -23,8 +23,7 @@ def _cidrs_for_device(db: Session, device: Device) -> list[str]:
             net = db.get(Network, p.network_id)
             if net:
                 cidrs.append(net.cidr)
-        # Resource grants are quarantined until protocol/port ACLs are implemented.
-        # Never translate a service permission into unrestricted access to its IP.
+        # Service grants are rendered separately, with protocol and destination port.
     return sorted(set(cidrs))
 
 
@@ -51,12 +50,12 @@ def render_ruleset(db: Session) -> str:
         "#!/usr/sbin/nft -f",
         # Replace only control-plane-owned tables in one atomic transaction.
         # A global flush would erase Fail2Ban and other services' protection.
-        "add table inet filter",
-        "delete table inet filter",
-        "add table ip nat",
-        "delete table ip nat",
+        "add table inet fortis_filter",
+        "delete table inet fortis_filter",
+        "add table ip fortis_nat",
+        "delete table ip fortis_nat",
         "",
-        "table inet filter {",
+        "table inet fortis_filter {",
         "  chain input {",
         "    type filter hook input priority filter; policy drop;",
         '    iif "lo" accept',
@@ -80,7 +79,7 @@ def render_ruleset(db: Session) -> str:
         .all()
     )
     peers = [peer for peer in peers if contour_enabled(peer.contour)]
-    input_guards, forward_guards = [], []
+    input_guards, forward_guards, output_guards = [], [], []
     for peer in peers:
         device = db.get(Device, peer.device_id_fk)
         if not device:
@@ -95,32 +94,47 @@ def render_ruleset(db: Session) -> str:
         cidrs = list(dict.fromkeys(cidrs))
         if peer.contour == Contour.SITES and peer.destination_cidrs:
             cidrs = effective_destinations(db, peer)
+        from .resource_acl import permitted_services
+        services = permitted_services(db, device)
+        service_hosts = [host + "/32" for host, _, _ in services]
         sources = [peer.vpn_ip]
         if peer.contour == Contour.EMPLOYEES and (peer.destination_cidrs or auto_site_access(db) or automatic_company_lans(db)):
             from .employee_networks import effective_employee_destinations
             cidrs = effective_employee_destinations(db, peer)
-            guard = f'    iifname "{emp_if}" ip saddr {peer.vpn_ip}'
-            if cidrs:
-                guard += ' ip daddr != { ' + ', '.join(cidrs) + ' }'
-            guard += ' drop'
-            input_guards.append(guard)
-            forward_guards.append(guard)
         if peer.contour == Contour.SITES:
             sources.extend(str(ipaddress.ip_network(p.strip(), strict=False)) for p in (peer.allowed_lans or '').split(',') if p.strip())
-            if peer.destination_cidrs:
-                source_set='{ '+', '.join(sources)+' }'
-                destination_set='{ '+', '.join(cidrs)+' }'
-                guard=f'    iifname "{site_if}" ip saddr {source_set} ip daddr != {destination_set} drop'
-                input_guards.append(guard)
-                forward_guards.extend([guard,f'    oifname "{site_if}" ip daddr {source_set} ip saddr != {destination_set} drop'])
-        # Revoke previously established resource-only flows before conntrack accepts.
+        # Check current destinations even when the last permission was removed:
+        # conntrack must not preserve an old resource/network grant.
+        source_set = sources[0] if len(sources) == 1 else '{ ' + ', '.join(sources) + ' }'
+        destinations = cidrs + service_hosts
+        guard = f'    iifname "{iface}" ip saddr {source_set}'
+        reverse = f'    oifname "{iface}" ip daddr {source_set}'
+        if destinations:
+            destination_set = '{ ' + ', '.join(destinations) + ' }'
+            guard += ' ip daddr != ' + destination_set
+            reverse += ' ip saddr != ' + destination_set
+        input_guards.append(guard + ' drop')
+        forward_guards.extend([guard + ' drop', reverse + ' drop'])
+        output_guards.append(reverse + ' drop')
+        # Check service tuples before established flows and generic server ports.
+        service_input, service_forward, service_reverse = [], [], []
         for host in quarantined_resource_hosts(db, device):
             if any(ipaddress.ip_address(host) in ipaddress.ip_network(cidr) for cidr in cidrs):
-                continue  # An independent, explicit network permission still applies.
+                continue  # Independently granted network access is intentionally broader.
             for source in sources:
-                rule = f'    iifname "{iface}" ip saddr {source} ip daddr {host} drop'
-                input_guards.insert(0, rule)
-                forward_guards.insert(0, rule)
+                prefix = f'    iifname "{iface}" ip saddr {source} ip daddr {host}'
+                reply = f'    oifname "{iface}" ip daddr {source} ip saddr {host}'
+                for allowed_host, protocol, port in services:
+                    if host == allowed_host:
+                        service_input.append(f'{prefix} {protocol} dport {port} accept')
+                        service_forward.append(f'{prefix} oifname "{uplink}" {protocol} dport {port} accept')
+                        service_reverse.append(f'{reply} {protocol} sport {port} ct state established,related accept')
+                service_input.append(prefix + ' drop')
+                service_forward.append(prefix + ' drop')
+                service_reverse.append(reply + ' drop')
+        input_guards[0:0] = service_input
+        forward_guards[0:0] = service_forward + service_reverse
+        output_guards[0:0] = service_reverse
         for source in sources:
             for cidr in cidrs:
                 lines.append(f'    iifname "{iface}" ip saddr {source} ip daddr {cidr} accept')
@@ -145,6 +159,8 @@ def render_ruleset(db: Session) -> str:
     lines[forward_start:forward_start]=company_forward+employee_forward+(link_rules(db, site_if) if settings.sites_enabled else [])+forward_guards
     input_start=lines.index('    type filter hook input priority filter; policy drop;')+1
     lines[input_start:input_start]=input_guards
+    output_start=lines.index('  chain forward {')
+    lines[output_start:output_start]=['  chain output {', '    type filter hook output priority filter; policy accept;', *output_guards, '  }']
     routed_nat = []
     for peer in peers:
         if peer.contour == Contour.SITES:
@@ -157,7 +173,7 @@ def render_ruleset(db: Session) -> str:
         "  }",
         "}",
         "",
-        "table ip nat {",
+        "table ip fortis_nat {",
         "  chain postrouting {",
         "    type nat hook postrouting priority srcnat; policy accept;",
         *employee_nat,
@@ -178,9 +194,12 @@ def apply_acl(db: Session) -> None:
         for peer in db.query(WireGuardPeer).filter(WireGuardPeer.contour==Contour.EMPLOYEES):
             if peer.private_key: render_stored_config(db,peer)
         db.flush()
+    from . import privilege
+    if privilege.enabled():
+        privilege.call('acl', rules=render_ruleset(db))
+        return
     NFT_FILE.parent.mkdir(parents=True, exist_ok=True)
     text = render_ruleset(db)
     NFT_FILE.write_text(text)
-    Path("/etc/nftables.conf").write_text(f"#!/usr/sbin/nft -f\ninclude \"{NFT_FILE}\"\n")
     subprocess.run(["nft", "-c", "-f", str(NFT_FILE)], check=True, capture_output=True)
     subprocess.run(["nft", "-f", str(NFT_FILE)], check=True, capture_output=True)

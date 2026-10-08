@@ -30,6 +30,7 @@ def local_secret():
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file='.env', extra='ignore')
     app_name: str = "FORTIS"
+    network_helper_socket: str = ""
     standard_wireguard: bool = True
     panel_gate_enabled: bool = False
     secret_key: str = Field(default_factory=local_secret)

@@ -153,6 +153,9 @@ def connections_dict(values):
 
 
 def run(*args):
+    from . import privilege
+    if privilege.enabled() and args[0] in ("ip", "nft", "wg"):
+        return privilege.command(args)
     proc = subprocess.run(list(args), capture_output=True, text=True, timeout=20)
     if proc.returncode:
         # Never return command stdout/stderr: it can contain WireGuard private keys.
@@ -187,7 +190,8 @@ def checks(db, require_active=False, check_firewall=False):
     add("Операционная система", linux, "Linux" if linux else "Для VPN нужен Linux; панель доступна на этой системе")
     for cmd in ("wg", "wg-quick", "ip", "nft", "sysctl", "ss"):
         add(cmd, shutil.which(cmd), "Установлен" if shutil.which(cmd) else "Установите на Linux-сервере")
-    add("Права управления сетью", os.geteuid() == 0, "Для первого запуска нужны права root")
+    from . import privilege
+    add("Права управления сетью", privilege.available() if privilege.enabled() else os.geteuid() == 0, "Изолированная сетевая служба" if privilege.enabled() else "Настройте изолированную сетевую службу")
     add("Хранилище", os.access(settings.data_dir, os.W_OK), "Каталог данных доступен для записи")
     free = shutil.disk_usage(settings.data_dir).free
     add("Место на диске", free >= 100 * 1024 * 1024, f"Свободно {free // (1024 * 1024)} МБ; необходимо не менее 100 МБ")
@@ -310,6 +314,11 @@ def get_checks(user: User = Depends(admin), db: Session = Depends(get_db)):
 
 
 def activate_interfaces(db):
+    from . import privilege
+    if privilege.enabled():
+        names = privilege.call("activate", profiles=read(db, "interfaces", {}), mtu=settings.mtu)
+        write(db, "owned", names); db.commit()
+        return
     cfg = read(db, "interfaces", {})
     owned = read(db, "owned", [])
     created = []
@@ -372,8 +381,8 @@ def start(request: Request, user: User = Depends(admin), db: Session = Depends(g
             verification = checks(db, require_active=True, check_firewall=True)
             firewall = True
             try:
-                run("nft", "list", "table", "inet", "filter")
-                run("nft", "list", "table", "ip", "nat")
+                run("nft", "list", "table", "inet", "fortis_filter")
+                run("nft", "list", "table", "ip", "fortis_nat")
             except (OSError, RuntimeError, subprocess.TimeoutExpired):
                 firewall = False
             if not verification["ready"] or not firewall or not getattr(request.app.state, "scheduler", None):

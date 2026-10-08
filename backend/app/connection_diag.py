@@ -18,7 +18,8 @@ def parse_ping(output):
 
 def peer_counters(iface, vpn_ip):
     try:
-        output = subprocess.check_output(['wg', 'show', iface, 'dump'], text=True, timeout=3, stderr=subprocess.DEVNULL)
+        from .wireguard import _run
+        output = _run(['wg', 'show', iface, 'dump'])
         for line in output.splitlines()[1:]:
             parts = line.split('\t')
             if len(parts) < 8:
@@ -26,7 +27,7 @@ def peer_counters(iface, vpn_ip):
             addresses = [str(ipaddress.ip_interface(cidr).ip) for cidr in parts[3].split(',') if cidr != '(none)']
             if vpn_ip in addresses:
                 return {'handshake': int(parts[4]), 'rx': int(parts[5]), 'tx': int(parts[6])}
-    except (OSError, ValueError, subprocess.SubprocessError):
+    except (OSError, RuntimeError, ValueError, subprocess.SubprocessError):
         pass
     return None
 
@@ -43,10 +44,15 @@ def diagnose(iface, vpn_ip):
     before = peer_counters(iface, vpn_ip)
     started = time.monotonic()
     try:
-        result = subprocess.run(['ping', '-n', '-c', '5', '-i', '0.2', '-W', '1', '-I', iface, vpn_ip],
-                                capture_output=True, text=True, timeout=7, env={**os.environ, 'LC_ALL': 'C'})
+        from . import privilege
+        if privilege.enabled():
+            from types import SimpleNamespace
+            result = SimpleNamespace(**privilege.call('ping', ip=vpn_ip, interface=iface, count=5))
+        else:
+            result = subprocess.run(['ping', '-n', '-c', '5', '-i', '0.2', '-W', '1', '-I', iface, vpn_ip],
+                                    capture_output=True, text=True, timeout=7, env={**os.environ, 'LC_ALL': 'C'})
         ping = parse_ping(result.stdout)
-    except (OSError, subprocess.SubprocessError):
+    except (OSError, RuntimeError, subprocess.SubprocessError):
         ping = parse_ping('')
     remaining = 1.0 - (time.monotonic() - started)
     if remaining > 0:

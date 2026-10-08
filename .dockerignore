@@ -1,0 +1,5 @@
+**
+!backend/
+!backend/requirements.txt
+!deploy/
+!deploy/Dockerfile.security-tests

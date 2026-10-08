@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
@@ -9,6 +9,8 @@ from ..ca import CorporateCA
 from ..config import settings
 from ..db import get_db
 from ..device_id import compute_device_id, normalize_mac
+from ..models import Session as AgentSession
+from ..agent_proof import prove, challenge
 from ..models import (
     AccessPolicy,
     AccessRequest,
@@ -22,10 +24,11 @@ from ..models import (
 )
 from ..schemas import DeviceVerifyIn, EnrollIn, HeartbeatIn
 
-def require_agent_mode():
-    # A submitted certificate is public information, not proof of key possession.
-    # Fail closed until the agent uses mutually authenticated TLS/challenge signing.
-    raise HTTPException(410, "Агент отключён: протокол требует подтверждения владения закрытым ключом. Используйте стандартный WireGuard")
+def require_agent_mode(request: Request):
+    if settings.standard_wireguard:
+        raise HTTPException(410, "Используется стандартный WireGuard. Агент отключён")
+    if request.url.scheme != 'https':
+        raise HTTPException(403, "Для агента требуется HTTPS")
 
 
 router = APIRouter(tags=["agent"], dependencies=[Depends(require_agent_mode)])
@@ -36,8 +39,18 @@ def ca_cert():
     return {"pem": CorporateCA().ca_pem()}
 
 
+from pydantic import BaseModel, Field
+
+class ChallengeIn(BaseModel):
+    certificatePem: str = Field(max_length=8192)
+
+@router.post('/device/challenge')
+def device_challenge(payload: ChallengeIn, db: Session = Depends(get_db)):
+    return challenge(db, payload.certificatePem)
+
 @router.post("/device/verify")
 def verify(payload: DeviceVerifyIn, request: Request, db: Session = Depends(get_db)):
+    prove(db, "verify", payload, payload.certificatePem)
     ip = request.client.host if request.client else ""
     try:
         return engine.verify_and_authorize(
@@ -58,6 +71,10 @@ def verify(payload: DeviceVerifyIn, request: Request, db: Session = Depends(get_
 
 @router.post("/device/heartbeat")
 def heartbeat(payload: HeartbeatIn, request: Request, db: Session = Depends(get_db)):
+    device_id = prove(db, "heartbeat", payload)
+    session = db.query(AgentSession).filter_by(token=payload.sessionToken, active=True).one_or_none()
+    if not session or session.device_id_fk != device_id:
+        raise HTTPException(403, "Сессия принадлежит другому устройству")
     ip = request.client.host if request.client else ""
     try:
         return engine.heartbeat(db, payload.sessionToken, ip)
@@ -67,9 +84,28 @@ def heartbeat(payload: HeartbeatIn, request: Request, db: Session = Depends(get_
 
 @router.post("/device/register")
 def register(payload: EnrollIn, request: Request, db: Session = Depends(get_db)):
-    row = db.query(AccessRequest).filter(AccessRequest.enrollment_token == payload.token).one_or_none()
+    row = db.query(AccessRequest).filter(AccessRequest.enrollment_token == payload.token).with_for_update().one_or_none()
     if not row or row.status != RequestStatus.ISSUED:
         raise HTTPException(403, "Недействительный токен регистрации")
+    import base64
+    try:
+        if len(base64.b64decode(payload.wireguardPublicKey, validate=True)) != 32:
+            raise ValueError('key')
+    except ValueError as exc:
+        raise HTTPException(422, "Некорректный публичный ключ WireGuard") from exc
+    if row.updated_at + timedelta(hours=24) < datetime.utcnow():
+        raise HTTPException(403, "Токен регистрации истёк; запросите повторную выдачу")
+    if row.access_from and row.access_from > datetime.utcnow():
+        raise HTTPException(403, "Срок доступа ещё не начался")
+    if row.issued_device_id or not row.user or not row.user.is_active or (row.access_until and row.access_until <= datetime.utcnow()):
+        raise HTTPException(403, "Регистрация отозвана или срок доступа истёк")
+    from ..resource_acl import validate_grants
+    validate_grants(db, row.resources_json, row.contour)
+    claimed = db.query(AccessRequest).filter(AccessRequest.id == row.id, AccessRequest.enrollment_token == payload.token,
+                                          AccessRequest.issued_device_id.is_(None)).update({'enrollment_token': None}, synchronize_session=False)
+    if claimed != 1:
+        db.rollback()
+        raise HTTPException(409, "Токен регистрации уже использован")
     mac_eth = normalize_mac(payload.macEthernet) if payload.macEthernet else ""
     mac_wifi = normalize_mac(payload.macWifi) if payload.macWifi else ""
     registered_mac = mac_eth or mac_wifi
@@ -93,7 +129,8 @@ def register(payload: EnrollIn, request: Request, db: Session = Depends(get_db))
         mac_wifi=mac_wifi,
         macs_json={"ethernet": mac_eth, "wifi": mac_wifi},
         system_identifier=payload.systemIdentifier,
-        status=DeviceStatus.PENDING,
+        status=DeviceStatus.ACTIVE,
+        require_agent=True,
         enrolled_by=row.created_by,
         enrolled_at=datetime.utcnow(),
         access_from=row.access_from,
@@ -143,7 +180,8 @@ def register(payload: EnrollIn, request: Request, db: Session = Depends(get_db))
     server_pub = wireguard.server_public_key(row.contour)
     from ..models import Network
 
-    cidrs = []
+    from ..resource_acl import permitted_services
+    cidrs = [host + "/32" for host, _, _ in permitted_services(db, device)]
     for nid in row.networks_json or []:
         net = db.get(Network, nid)
         if net:
@@ -153,7 +191,7 @@ def register(payload: EnrollIn, request: Request, db: Session = Depends(get_db))
     for extra in [p.strip() for p in settings.extra_allowed_ips.split(",") if p.strip()]:
         cidrs.append(extra)
     allowed = ", ".join(dict.fromkeys(cidrs)) if cidrs else (
-        "0.0.0.0/0" if row.contour == Contour.EMPLOYEES else f"{settings.employees_net}, {settings.sites_net}"
+        wireguard.net_for(row.contour)
     )
     return {
         "deviceId": device_id,
@@ -164,7 +202,7 @@ def register(payload: EnrollIn, request: Request, db: Session = Depends(get_db))
         "caPem": ca.ca_pem(),
         "serverPublicKey": server_pub,
         "endpoint": f"{wireguard.endpoint_for(row.contour)[0]}:{wireguard.endpoint_for(row.contour)[1]}",
-        "allowedIps": allowed or "0.0.0.0/0",
+        "allowedIps": allowed,
         "dns": settings.dns_servers,
         "mtu": settings.mtu,
         "contour": row.contour.value,

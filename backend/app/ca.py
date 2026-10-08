@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import hashlib
+import fcntl
+import os
+import tempfile
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -25,8 +28,30 @@ class CorporateCA:
         self._ensure()
 
     def _ensure(self) -> None:
-        if self.key_path.exists() and self.cert_path.exists():
-            return
+        # Serialize first issuance across threads/processes; never silently replace a lost CA.
+        with (self.ca_dir / '.ca.lock').open('a') as lock:
+            os.chmod(lock.name, 0o600)
+            fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+            if self.key_path.exists() or self.cert_path.exists():
+                if not (self.key_path.exists() and self.cert_path.exists()):
+                    raise RuntimeError('CA incomplete: restore its matching key and certificate from backup')
+                if self.key.public_key().public_numbers() != self.cert.public_key().public_numbers():
+                    raise RuntimeError('CA key/certificate mismatch')
+                return
+            self._generate()
+
+    @staticmethod
+    def _atomic(path, data):
+        with tempfile.NamedTemporaryFile(dir=path.parent, delete=False) as stream:
+            temp = Path(stream.name)
+            try:
+                os.chmod(temp, 0o600)
+                stream.write(data); stream.flush(); os.fsync(stream.fileno())
+                os.replace(temp, path)
+            finally:
+                temp.unlink(missing_ok=True)
+
+    def _generate(self):
         key = rsa.generate_private_key(public_exponent=65537, key_size=4096)
         subject = issuer = x509.Name(
             [
@@ -60,15 +85,9 @@ class CorporateCA:
             )
             .sign(key, hashes.SHA256())
         )
-        self.key_path.write_bytes(
-            key.private_bytes(
-                serialization.Encoding.PEM,
-                serialization.PrivateFormat.TraditionalOpenSSL,
-                serialization.NoEncryption(),
-            )
-        )
-        self.key_path.chmod(0o600)
-        self.cert_path.write_bytes(cert.public_bytes(serialization.Encoding.PEM))
+        self._atomic(self.key_path, key.private_bytes(serialization.Encoding.PEM,
+            serialization.PrivateFormat.TraditionalOpenSSL, serialization.NoEncryption()))
+        self._atomic(self.cert_path, cert.public_bytes(serialization.Encoding.PEM))
 
     @property
     def key(self):

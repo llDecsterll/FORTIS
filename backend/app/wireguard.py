@@ -21,6 +21,9 @@ class WireGuardError(RuntimeError):
 
 
 def _run(cmd: list[str]) -> str:
+    from . import privilege
+    if privilege.enabled() and cmd not in (["wg", "genkey"], ["wg", "genpsk"]):
+        return privilege.command(cmd)
     proc = subprocess.run(cmd, capture_output=True, text=True)
     if proc.returncode != 0:
         raise WireGuardError(proc.stderr.strip() or proc.stdout.strip() or "wg failed")
@@ -104,6 +107,12 @@ def set_peer(contour: Contour, public_key: str, psk: str, allowed_ips: str) -> N
                     continue
                 if route.get('dst') and route['dst'] != 'default' and lan.overlaps(ipaddress.ip_network(route['dst'], strict=False)):
                     raise WireGuardError('LAN объекта пересекается с подключённой сетью сервера')
+    from . import privilege
+    if privilege.enabled():
+        privilege.call('peer_set', interface=iface, public_key=public_key, psk=psk, allowed_ips=allowed_ips)
+        if lans:
+            sync_site_lan_routes(', '.join(str(lan) for lan in lans))
+        return
     fd, psk_file = tempfile.mkstemp(prefix='kontur-', suffix='.psk')
     with os.fdopen(fd, 'w') as stream:
         stream.write(psk)
@@ -129,20 +138,19 @@ def set_peer(contour: Contour, public_key: str, psk: str, allowed_ips: str) -> N
 
 def remove_peer(contour: Contour, public_key: str) -> None:
     iface = iface_for(contour)
-    proc = subprocess.run(["wg", "set", iface, "peer", public_key, "remove"], capture_output=True, text=True, timeout=10)
-    if proc.returncode != 0:
-        raise WireGuardError("Не удалось отключить VPN-подключение")
+    _run(["wg", "set", iface, "peer", public_key, "remove"])
 
 
 def dump(contour: Contour) -> list[dict]:
     if not contour_enabled(contour):
         return []
     iface = iface_for(contour)
-    proc = subprocess.run(["wg", "show", iface, "dump"], capture_output=True, text=True)
-    if proc.returncode != 0:
+    try:
+        output = _run(["wg", "show", iface, "dump"])
+    except (WireGuardError, RuntimeError, OSError):
         return []
     rows = []
-    lines = [ln for ln in proc.stdout.splitlines() if ln.strip()]
+    lines = [ln for ln in output.splitlines() if ln.strip()]
     if not lines:
         return rows
     # first line is interface
@@ -203,5 +211,4 @@ PersistentKeepalive = 10
 
 def server_public_key(contour: Contour) -> str:
     iface = iface_for(contour)
-    proc = subprocess.run(["wg", "show", iface, "public-key"], capture_output=True, text=True)
-    return proc.stdout.strip()
+    return _run(["wg", "show", iface, "public-key"])
