@@ -47,9 +47,7 @@ def lan_mac(ip: str) -> str:
 
 
 def client_context(request: Request) -> tuple[str, str, str]:
-    ip = (request.headers.get("x-real-ip") or "").strip()
-    if not ip and request.client:
-        ip = request.client.host or ""
+    ip = request.client.host if request.client else ""
     return ip[:64], browser_name(request.headers.get("user-agent") or ""), lan_mac(ip)
 
 

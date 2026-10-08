@@ -1,8 +1,7 @@
 from __future__ import annotations
 
-import json
+import ipaddress
 import re
-from urllib.request import urlopen
 
 _LEGAL = re.compile(
     r"\b(PJSC|OJSC|CJSC|JSC|LLC|LTD|INC|CORP|PUBLIC JOINT STOCK COMPANY|JOINT STOCK COMPANY)\b",
@@ -42,18 +41,12 @@ def pretty_isp(name: str) -> str:
 
 
 def lookup_place(ip: str) -> tuple[str, str]:
-    """Город и провайдер по внешнему IP. Для локальной сети провайдер не запрашивается."""
-    if not ip or ip.startswith("127.") or ip.startswith("192.168.") or ip.startswith("10."):
-        return "LAN", ""
+    """No external disclosure of client addresses. Online GeoIP is disabled."""
     try:
-        with urlopen(f"http://ip-api.com/json/{ip}?lang=ru&fields=status,country,city,isp,query", timeout=3) as resp:
-            data = json.loads(resp.read().decode())
-        if data.get("status") == "success":
-            geo = f"{data.get('country') or ''}, {data.get('city') or ''}".strip(", ")
-            return geo, pretty_isp(data.get("isp") or "")
-    except Exception:
+        address = ipaddress.ip_address(ip)
+    except ValueError:
         return "", ""
-    return "", ""
+    return ("LAN", "") if not address.is_global else ("", "")
 
 
 def lookup_geo(ip: str) -> str:

@@ -23,16 +23,23 @@ def _cidrs_for_device(db: Session, device: Device) -> list[str]:
             net = db.get(Network, p.network_id)
             if net:
                 cidrs.append(net.cidr)
-        if p.resource_id:
-            res = db.get(Resource, p.resource_id)
-            if res:
-                host = res.host
-                try:
-                    ipaddress.ip_address(host)
-                    cidrs.append(f"{host}/32")
-                except ValueError:
-                    pass
+        # Resource grants are quarantined until protocol/port ACLs are implemented.
+        # Never translate a service permission into unrestricted access to its IP.
     return sorted(set(cidrs))
+
+
+def quarantined_resource_hosts(db, device):
+    result = set()
+    for policy in db.query(AccessPolicy).filter(AccessPolicy.device_id_fk == device.id, AccessPolicy.allowed.is_(True)):
+        resource = db.get(Resource, policy.resource_id) if policy.resource_id else None
+        if resource:
+            try:
+                host = ipaddress.ip_address(resource.host)
+                if host.version == 4:
+                    result.add(str(host))
+            except ValueError:
+                continue
+    return sorted(result)
 
 
 def render_ruleset(db: Session) -> str:
@@ -106,6 +113,14 @@ def render_ruleset(db: Session) -> str:
                 guard=f'    iifname "{site_if}" ip saddr {source_set} ip daddr != {destination_set} drop'
                 input_guards.append(guard)
                 forward_guards.extend([guard,f'    oifname "{site_if}" ip daddr {source_set} ip saddr != {destination_set} drop'])
+        # Revoke previously established resource-only flows before conntrack accepts.
+        for host in quarantined_resource_hosts(db, device):
+            if any(ipaddress.ip_address(host) in ipaddress.ip_network(cidr) for cidr in cidrs):
+                continue  # An independent, explicit network permission still applies.
+            for source in sources:
+                rule = f'    iifname "{iface}" ip saddr {source} ip daddr {host} drop'
+                input_guards.insert(0, rule)
+                forward_guards.insert(0, rule)
         for source in sources:
             for cidr in cidrs:
                 lines.append(f'    iifname "{iface}" ip saddr {source} ip daddr {cidr} accept')

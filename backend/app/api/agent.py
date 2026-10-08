@@ -23,8 +23,9 @@ from ..models import (
 from ..schemas import DeviceVerifyIn, EnrollIn, HeartbeatIn
 
 def require_agent_mode():
-    if settings.standard_wireguard:
-        raise HTTPException(410, "Используется стандартный WireGuard. Регистрация агента отключена")
+    # A submitted certificate is public information, not proof of key possession.
+    # Fail closed until the agent uses mutually authenticated TLS/challenge signing.
+    raise HTTPException(410, "Агент отключён: протокол требует подтверждения владения закрытым ключом. Используйте стандартный WireGuard")
 
 
 router = APIRouter(tags=["agent"], dependencies=[Depends(require_agent_mode)])

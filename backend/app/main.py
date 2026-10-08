@@ -51,10 +51,11 @@ from .setup import router as setup_router
 app.include_router(setup_router, prefix="/api")
 app.include_router(api, prefix="/api")
 app.add_middleware(PanelGateMiddleware, enabled=settings.panel_gate_enabled)
-from .http_security import HttpSecurityMiddleware, public_hosts
+from .http_security import HttpSecurityMiddleware, ClientIpMiddleware, public_hosts
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 app.add_middleware(HttpSecurityMiddleware)
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=public_hosts(), www_redirect=False)
+app.add_middleware(ClientIpMiddleware)
 
 STATIC = Path(__file__).resolve().parent.parent.parent / "web" / "dist"
 if STATIC.exists():

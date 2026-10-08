@@ -71,6 +71,7 @@ class Settings(BaseSettings):
     webhook_url: str = ""
     security_notify_email: str = ""
     ad_ca_file: str = ""
+    trusted_proxy_ips: str = ""
     allowed_hosts: str = "localhost,127.0.0.1,::1,testserver"
     public_origin: str = "http://127.0.0.1:5173"
 settings = Settings()

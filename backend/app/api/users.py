@@ -813,6 +813,7 @@ def update_user(user_id: str, payload: UserPatch, request: Request, db: Session 
         if len(password) < 8:
             raise HTTPException(status_code=422, detail="Пароль должен быть не короче 8 символов")
         user.password_hash = hash_password(password)
+        user.panel_nonce = secrets.token_urlsafe(32)
     if payload.role is not None:
         try:
             role = Role(payload.role)
@@ -824,6 +825,8 @@ def update_user(user_id: str, payload: UserPatch, request: Request, db: Session 
             admins = db.query(User).filter(User.role == Role.ADMIN, User.id != user.id).count()
             if admins < 1:
                 raise HTTPException(status_code=409, detail="Нельзя снять роль с последнего администратора")
+        if user.role != role:
+            user.panel_nonce = secrets.token_urlsafe(32)
         user.role = role
     db.commit()
     db.refresh(user)
@@ -848,6 +851,7 @@ def bind_totp(user_id: str, payload: TotpBindIn, request: Request, db: Session =
     if payload.reset or not user.totp_secret:
         user.totp_secret = pyotp.random_base32()
         user.totp_confirmed = False
+        user.panel_nonce = secrets.token_urlsafe(32)
         db.commit()
     uri = pyotp.TOTP(user.totp_secret).provisioning_uri(name=user.email, issuer_name="FORTIS")
     audit(db, actor_id=actor.id, actor_email=actor.email, action="totp_bind", target=user.email, ip=request.client.host if request.client else "")

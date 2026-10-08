@@ -51,3 +51,24 @@ class HttpSecurityMiddleware:
                 message = {**message, 'headers': headers}
             await send(message)
         await self.app(scope, receive, secure_send)
+
+
+class ClientIpMiddleware:
+    """Trust exactly one proxy-supplied IP only from explicitly configured peers."""
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        import ipaddress
+        if scope['type'] == 'http' and scope.get('client'):
+            try:
+                peer = ipaddress.ip_address(scope['client'][0])
+                trusted = [ipaddress.ip_network(v.strip()) for v in settings.trusted_proxy_ips.split(',') if v.strip()]
+                if any(peer in net for net in trusted):
+                    headers = [(k, v) for k, v in scope.get('headers', []) if k.lower() == b'x-real-ip']
+                    if len(headers) == 1:
+                        address = ipaddress.ip_address(headers[0][1].decode('ascii').strip())
+                        scope = {**scope, 'client': (str(address), scope['client'][1])}
+            except (ValueError, UnicodeError):
+                pass  # Retain transport peer on malformed configuration/header.
+        await self.app(scope, receive, send)

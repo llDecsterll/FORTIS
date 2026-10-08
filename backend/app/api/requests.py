@@ -154,6 +154,8 @@ def _has_memo(row: AccessRequest) -> bool:
 
 
 def _issue_row(db: Session, row: AccessRequest, actor_email: str) -> None:
+    if row.resources_json:
+        raise HTTPException(409, "Ресурсные доступы временно отключены; заявка не может быть выдана")
     if not row.site_id and row.user and not row.user.is_active:
         raise HTTPException(409, "Учётная запись заблокирована. Сначала разблокируйте пользователя")
     devices = row.site.devices if row.site_id and row.site else (row.user.devices if row.user else [])
@@ -346,7 +348,9 @@ def create_request(payload: RequestIn, request: Request, db: Session = Depends(g
         row.networks_json = [n.id for n in selected_networks(db, payload.networkIds)]
     else:
         row.networks_json = payload.networkIds
-    row.resources_json = payload.resourceIds
+    if payload.resourceIds:
+        raise HTTPException(422, "Ресурсные доступы временно отключены до реализации ACL по протоколу и порту")
+    row.resources_json = []
     db.add(row)
     db.commit()
     db.refresh(row)
@@ -359,6 +363,8 @@ def approve(request_id: str, request: Request, db: Session = Depends(get_db), ac
     row = db.query(AccessRequest).filter(AccessRequest.id == request_id).with_for_update().first()
     if not row:
         raise HTTPException(404, "Заявка не найдена")
+    if row.resources_json:
+        raise HTTPException(409, "Ресурсные доступы временно отключены; создайте заявку только с явно разрешёнными сетями")
     if row.status != RequestStatus.PENDING_APPROVAL:
         raise HTTPException(409, "Заявка уже обработана")
     if not row.site_id and not _has_memo(row):
