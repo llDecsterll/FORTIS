@@ -1,0 +1,23 @@
+.approval-bell { position:relative; display:inline-flex; align-items:center; justify-content:center; flex:none; width:44px; height:44px; border:1px solid var(--border,#dce4ef); border-radius:12px; color:var(--muted,#62718b); background:#fff; text-decoration:none; }
+.approval-bell.has-pending { color:var(--accent,#3159de); background:#eef3ff; }
+.approval-bell.stale { color:#8b5614; background:#fff7e8; }
+.approval-bell-count { position:absolute; inset-block-start:-5px; inset-inline-end:-5px; min-width:18px; height:18px; padding:0 4px; display:grid; place-items:center; border-radius:6px; font-size:10px; line-height:1; font-weight:700; background:var(--accent,#3159de); color:white; font-variant-numeric:tabular-nums; }
+.approval-bell.stale .approval-bell-count { background:#8b5614; }
+.approval-bell:focus-visible { outline:3px solid #8faeff; outline-offset:3px; }
+.approval-bell-ring { transform-origin:50% 15%; animation:approval-bell-ring 250ms var(--ease-out,cubic-bezier(.23,1,.32,1)) 1; }
+@keyframes approval-bell-ring { 0%,100% {transform:rotate(0)} 25% {transform:rotate(-14deg)} 65% {transform:rotate(10deg)} }
+.approval-sr-status { position:absolute; width:1px; height:1px; padding:0; overflow:hidden; clip-path:inset(50%); white-space:nowrap; }
+.approval-filters { display:flex; align-items:end; flex-wrap:wrap; gap:16px; margin-block:20px; }
+.approval-filters label { display:grid; gap:6px; min-width:min(100%,220px); }
+.approval-filters select { -webkit-appearance:none; appearance:none; height:44px; min-height:44px; border:1px solid var(--border,#dce4ef); border-radius:10px; background-color:white; background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2362718b' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E"); background-repeat:no-repeat; background-position:right 12px center; padding:8px 36px 8px 12px; font:inherit; color:inherit; }
+.approval-filters p { margin:0 auto 10px 0; color:var(--muted,#62718b); font-variant-numeric:tabular-nums; }
+.approval-center .workflow-tabs { flex-wrap:wrap; }
+.approval-center .workflow-tabs button { min-height:44px; }
+.approval-center .workflow-table td { vertical-align:middle; }
+.approval-highlight { outline:2px solid #3159de; outline-offset:-2px; background:#eef3ff; }
+.approval-pagination { display:flex; justify-content:flex-end; align-items:center; flex-wrap:wrap; gap:12px; margin-block:18px; font-variant-numeric:tabular-nums; }
+.approval-details { display:grid; grid-template-columns:minmax(100px,1fr) minmax(0,2fr); gap:10px 16px; }
+.approval-details dt { color:var(--muted,#62718b); }
+.approval-details dd { margin:0; overflow-wrap:anywhere; }
+@media (max-width:480px) { .approval-details {grid-template-columns:minmax(0,1fr);gap:6px} .approval-details dd {margin-block-end:10px} .approval-filters label {width:100%} .approval-pagination {justify-content:space-between} }
+@media (prefers-reduced-motion:reduce) { .approval-bell-ring {animation:none} }

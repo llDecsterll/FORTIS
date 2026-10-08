@@ -1,0 +1,35 @@
+# Runtime data, credentials and local configuration
+.runtime/
+**/.runtime/
+.env
+.env.*
+!.env.example
+*.db
+*.db-*
+*.sqlite
+*.sqlite3
+*.sqlite3-*
+*.key
+*.pem
+*.p12
+*.pfx
+*.crt
+*.log
+backups/
+uploads/
+# Installed dependencies and generated output
+backend/.venv*/
+__pycache__/
+*.py[cod]
+web/node_modules/
+web/dist/
+# Local exports, rollback copies and editor files
+.DS_Store
+MANIFEST.json
+README-EXPORT.txt
+*.rollback-*
+*.bak
+.idea/
+.vscode/
+# Local audit artifacts are not part of a clean distribution
+audit/

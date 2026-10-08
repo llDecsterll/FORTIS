@@ -1,0 +1,53 @@
+/* Approval workflow colours are independent of activation and connectivity. */
+#workflow-users-content .workflow-section:first-child td:nth-child(4) > span {
+  box-sizing:border-box; display:inline-flex; align-items:center; justify-content:center;
+  width:120px; min-width:120px; height:38px; min-height:38px;
+  padding:6px 10px; border-radius:8px; text-align:center; white-space:nowrap;
+}
+.workflow-link[data-document], [data-memos] .workflow-link { display:flex; align-items:center; gap:8px; width:fit-content; max-width:100%; min-height:32px; margin-top:8px; padding:6px 10px; border:1px solid #dce4e7; border-radius:8px; background:#fff; color:#40535f; font-size:12px; font-weight:600; line-height:1.4; text-align:left; cursor:pointer; box-shadow:0 1px 2px #233e4810; }
+.workflow-link[data-document]:hover, [data-memos] .workflow-link:hover { background:#f4f8f6; border-color:#bacfc7; text-decoration:none; }
+.workflow-link[data-document]:focus-visible, [data-memos] .workflow-link:focus-visible { outline:2px solid #2563eb; outline-offset:3px; }
+.workflow-primary[data-request-user], .workflow-form button[type="submit"] { background:#2563eb; border-color:#2563eb; color:#fff; }
+.workflow-primary[data-request-user]:hover, .workflow-form button[type="submit"]:hover { background:#1d4ed8; border-color:#1d4ed8; }
+.workflow-approval-clock { display:inline-flex; align-items:center; justify-content:center; width:38px; height:38px; border-radius:10px; background:#fff1b8; color:#805400; }
+.workflow-clock-hand { transform-origin:12px 12px; animation:approval-clock-turn 12s linear infinite; }
+@keyframes approval-clock-turn { to { transform:rotate(360deg); } }
+.router-fields { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:16px; margin-block:20px; }
+.router-fields label { display:grid; gap:8px; font-weight:600; }
+.workflow-form [data-destinations] { border:1px solid #d5deea; border-radius:12px; padding:16px; min-width:0; }
+.workflow-form [data-destinations] legend { font-weight:600; padding-inline:6px; }
+.workflow-form .workflow-check { display:flex; align-items:center; gap:10px; padding:8px; font-variant-numeric:tabular-nums; }
+.workflow-form .workflow-check input[type="checkbox"] { width:18px; height:18px; min-height:0; margin:0; flex:none; accent-color:#2563eb; }
+.workflow-form [data-destinations] button { margin-top:16px; }
+.router-fields select,.router-fields input { width:100%; min-width:0; box-sizing:border-box; padding:10px; border:1px solid #d5deea; border-radius:8px; background:#fff; color:#263648; font:inherit; }
+.router-guide { padding-left:24px; line-height:1.65; }
+.router-guide li { margin-block:12px; overflow-wrap:anywhere; }
+.router-warning { padding:12px 16px; border:1px solid #ebcf6a; border-radius:8px; background:#fffbeb; color:#755000; line-height:1.5; }
+.router-routes { font-variant-numeric:tabular-nums; padding-left:24px; line-height:1.7; }
+.workflow-dialog details { margin-block:16px; }
+.workflow-dialog summary { cursor:pointer; font-weight:600; padding-block:10px; }
+.workflow-dialog h3 { text-wrap:balance; }
+.workflow-approval-wait { display:inline-flex; align-items:center; padding:7px 10px; border:1px solid #ebcf6a; border-radius:7px; background:#fff1b8; color:#755000; font-size:12px; font-weight:600; line-height:1.4; white-space:nowrap; }
+.workflow-review-action { margin-top:8px; }
+.workflow-primary[data-review-user] { background:#fff9e4; border-color:#dfc66f; color:#755000; }
+.workflow-primary[data-review-user]:hover { background:#fff1b8; border-color:#c5a43e; }
+.workflow-status.approval-confirmed { background:#dcf3e4; color:#166534; }
+.workflow-status.rejected { background:#fee2e2; color:#b91c1c; }
+.workflow-primary[data-decision="approve"] { background:#15803d; border-color:#15803d; color:#fff; }
+.workflow-primary[data-decision="approve"]:hover { background:#166534; border-color:#166534; }
+.workflow-secondary[data-decision="reject"] { background:#b91c1c; border-color:#b91c1c; color:#fff; }
+.workflow-secondary[data-decision="reject"]:hover { background:#991b1b; border-color:#991b1b; }
+@media (prefers-reduced-motion:reduce) { .workflow-clock-hand { animation:none; } }
+.workflow-form [data-employee-networks] { margin:0; padding:16px; border:1px solid #dce4ee; border-radius:12px; min-width:0; }
+.workflow-network-options { max-height:240px; overflow:auto; display:grid; gap:8px; }
+.workflow-form .workflow-network-option { display:flex; align-items:center; gap:12px; padding:10px; background:#f7f9fc; border-radius:8px; }
+.workflow-form .workflow-network-option input { width:18px; height:18px; min-height:0; flex:none; margin:0; }
+.workflow-network-option small { display:block; color:#64748b; font-variant-numeric:tabular-nums; }
+.workflow-form [data-network-error] { color:#b42318; margin:0; }
+#workflow-users-content .workflow-section:first-child td:last-child button,
+#workflow-users-content .workflow-section:first-child td:last-child .workflow-approval-wait {
+  box-sizing:border-box; display:flex; align-items:center; justify-content:center;
+  width:184px; min-width:184px; height:36px; min-height:36px;
+  padding:6px 10px; border-radius:8px; font-size:12px; line-height:1.4;
+  text-align:center; white-space:nowrap;
+}
